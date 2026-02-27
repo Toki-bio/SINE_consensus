@@ -1,83 +1,153 @@
 #!/bin/bash
 # sine_consensus.sh — Bootstrapped SINE consensus builder
-# Usage: bash sine_consensus.sh input.fasta [subsample_size=100] [max_iters=50] [stability_thresh=0.01]
 #
-# Strategy: iterative subsampling + progressive consensus accumulation.
-# Each iteration draws a random subsample, aligns with mafft --auto, then
-# computes a majority-vote consensus via awk. Mini-consensuses are appended
-# to master_raw.fasta and re-aligned with mafft --auto each iteration.
-# Convergence checked via Hamming distance between successive master consensuses.
+# Usage:  bash sine_consensus.sh [options] input.fasta
 #
-# NOTE: Master alignment contains mini-consensuses, not raw copies. Deliberate
-# tradeoff — aligning all N copies simultaneously is intractable.
+# Options:
+#   -n SIZE    Subsample size per iteration (default: 100)
+#   -m ITERS   Maximum iterations (default: 50)
+#   -s THRESH  Convergence threshold for Hamming distance (default: 0.01)
+#   -t PCT     Frequency threshold 0-100: base_count/total_seqs >= t to call (default: 50)
+#              Gaps are in the denominator — this is what suppresses ragged flanks.
+#   -c PCT     Min coverage 0-100: non_gap/total_seqs >= c to even try calling (default: 30)
+#   -k         Keep intermediate files (trace alignment, log)
+#   -h         Show this help
 #
-# Requires: mafft, shuf, awk (no seqkit/emboss dependency)
+# Consensus algorithm (matches Toki-bio MSA-viewer exactly):
+#   For each alignment column:
+#     1. non_gap_count / nseq < min_cov  → '-'
+#     2. best_base_count / nseq >= threshold  → call base  (gaps IN denominator)
+#     3. Otherwise → '-'
+#   Using gaps in the denominator is critical: flank columns present in only
+#   20-30% of sequences score 0.2-0.3 frequency and are silently trimmed.
+#   This also prevents flanks from accumulating into mini-consensuses during
+#   iterative subsampling, which was the root cause of garbage output.
 #
 # Output:
-#   final_consensus.fasta         — ungapped, ready for pairwise alignment use
-#   final_consensus_gapped.fasta  — gap columns retained, shows alignment structure
-#   master.aln.fasta              — accumulated master alignment (kept for inspection)
-#   consensus_log.txt             — iteration log
+#   ${BASENAME}_consensus.fasta  — ungapped consensus
+# With -k:
+#   ${BASENAME}_trace.aln.fasta  — mini-consensuses per iteration + final
+#   ${BASENAME}_consensus.log    — convergence log
 #
-# No automatic trimming. Trim manually after visual inspection.
+# Requires: mafft, shuf, awk, bc
 
-INPUT_FASTA=${1:-input.fasta}
-SUBSAMPLE_SIZE=${2:-100}
-MAX_ITERS=${3:-50}
-STABILITY_THRESH=${4:-0.01}
+set -euo pipefail
 
-MASTER_RAW="master_raw.fasta"   # plain concatenation of all mini-consensuses
-MASTER_ALN="master.aln.fasta"   # re-aligned each iteration with mafft --auto
-PREV_CONS="prev_cons.fasta"     # consensus from previous iteration (for convergence check)
-CURR_CONS="curr_cons.fasta"     # consensus from current iteration
-LOG="consensus_log.txt"
-BASENAME=$(basename "$INPUT_FASTA" .fasta)
+# ── Defaults ───────────────────────────────────────────────────────────────
+SUBSAMPLE_SIZE=100
+MAX_ITERS=50
+STABILITY_THRESH=0.01
+CONS_THRESH=50      # frequency threshold (gaps in denominator)
+MIN_COVERAGE=30     # min non-gap coverage to attempt a call
+KEEP=0
+MIN_ITERS=5
 
-# ── Consensus from alignment (majority-vote awk, single pass) ─────────────
-# A base must appear at a column to be called; ties → N.
-# Columns with >50% gaps → '-' (retained in gapped output, stripped in final).
-# No external dependencies.
+# ── Parse arguments ────────────────────────────────────────────────────────
+usage() {
+    grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'
+    exit 0
+}
+
+while getopts "n:m:s:t:c:kh" opt; do
+    case $opt in
+        n) SUBSAMPLE_SIZE=$OPTARG ;;
+        m) MAX_ITERS=$OPTARG ;;
+        s) STABILITY_THRESH=$OPTARG ;;
+        t) CONS_THRESH=$OPTARG ;;
+        c) MIN_COVERAGE=$OPTARG ;;
+        k) KEEP=1 ;;
+        h) usage ;;
+        *) usage ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+INPUT_FASTA=${1:?Error: input FASTA required}
+[ -f "$INPUT_FASTA" ] || { echo "Error: $INPUT_FASTA not found" >&2; exit 1; }
+
+BASENAME=$(basename "$INPUT_FASTA" | sed 's/\.\(fasta\|fa\|fas\)$//')
+WORKDIR=$(mktemp -d "${BASENAME}_cons_XXXXXX")
+LOG="${BASENAME}_consensus.log"
+
+# ── Cleanup on exit ────────────────────────────────────────────────────────
+cleanup() {
+    rm -rf "$WORKDIR"
+    [ "$KEEP" -eq 0 ] && rm -f "$LOG"
+}
+trap cleanup EXIT
+
+# ── Progress display ───────────────────────────────────────────────────────
+progress() {
+    printf '\r\033[K%s' "$*" >&2
+}
+
+# ── Random subsample (shuf/awk, no seqkit) ────────────────────────────────
+random_subsample() {
+    local INFILE=$1 N=$2 OUTFILE=$3
+    awk '/^>/ { if(i>0) printf("\n"); i++; printf("%s\t",$0); next }
+         { printf("%s",$0) }
+         END { printf("\n") }' "$INFILE" \
+        | shuf > "$WORKDIR/shuffled.tmp"
+    head -n "$N" "$WORKDIR/shuffled.tmp" \
+        | awk 'BEGIN{FS="\t"}{printf("%s\n%s\n",$1,$2)}' > "$OUTFILE"
+    rm -f "$WORKDIR/shuffled.tmp"
+}
+
+# ── Consensus from alignment (MSA-viewer algorithm) ────────────────────────
+# Gaps are IN the frequency denominator. A base must appear in >=threshold%
+# of ALL sequences (not just those covering this column) to be called.
+# This suppresses ragged flanks at every stage, including mini-consensuses,
+# so garbage cannot accumulate into the master alignment.
 compute_consensus() {
-    local ALN=$1
-    local CONS=$2
-    awk '
+    local ALN=$1 CONS=$2
+    awk -v thresh="$CONS_THRESH" -v min_cov="$MIN_COVERAGE" '
     /^>/ {
         if (seq != "") {
+            nseq++
             line = toupper(seq)
             if (length(line) > maxcol) maxcol = length(line)
             for (i = 1; i <= length(line); i++) {
                 c = substr(line, i, 1)
                 count[i][c]++
-                total[i]++
             }
         }
-        seq = ""
-        next
+        seq = ""; next
     }
     { seq = seq $0 }
     END {
         if (seq != "") {
+            nseq++
             line = toupper(seq)
             if (length(line) > maxcol) maxcol = length(line)
             for (i = 1; i <= length(line); i++) {
                 c = substr(line, i, 1)
                 count[i][c]++
-                total[i]++
             }
         }
+        thr = thresh / 100.0
+        cov = min_cov / 100.0
         printf ">consensus\n"
         for (i = 1; i <= maxcol; i++) {
-            if (!total[i]) continue
-            gap    = (count[i]["-"] ? count[i]["-"] : 0)
-            nongap = total[i] - gap
-            if (nongap < total[i] / 2) { printf "-"; continue }
-            best = ""; mx = 0; tie = 0
-            for (b in count[i]) {
-                if (b == "-") continue
-                if (count[i][b] > mx)       { mx = count[i][b]; best = b; tie = 0 }
-                else if (count[i][b] == mx) { tie = 1 }
+            gap    = (count[i]["-"] + 0) + (count[i]["."] + 0)
+            nongap = nseq - gap
+
+            # 1. Min coverage check
+            if (nongap < nseq * cov) { printf "-"; continue }
+
+            # 2. Most frequent base among ACGT
+            split("A C G T", bases, " ")
+            best = "-"; mx = 0; tie = 0
+            for (b = 1; b <= 4; b++) {
+                base = bases[b]
+                c = count[i][base] + 0
+                if (c > mx)             { mx = c; best = base; tie = 0 }
+                else if (c == mx && c > 0) { tie = 1 }
             }
-            printf (tie ? "N" : best)
+
+            # 3. Frequency with gaps in denominator — matches MSA-viewer
+            if (mx == 0 || mx / nseq < thr) { printf "-"; continue }
+
+            printf (tie ? "-" : best)
         }
         print ""
     }
@@ -85,7 +155,6 @@ compute_consensus() {
 }
 
 # ── Hamming distance between two single-sequence FASTA files ──────────────
-# Returns 1.0 if sequences differ in length by >10% (unconverged by definition).
 approx_distance() {
     awk '
     NR==FNR { if (/^>/) next; seq1 = seq1 $0; next }
@@ -95,7 +164,7 @@ approx_distance() {
         len1 = length(seq1); len2 = length(seq2)
         if (len1 == 0 || len2 == 0) { print 1.0; exit }
         lendiff = (len1 > len2 ? len1 - len2 : len2 - len1)
-        if (lendiff > len1 / 10) { print 1.0; exit }
+        if (lendiff > len1 * 0.1) { print 1.0; exit }
         minlen = (len1 < len2 ? len1 : len2)
         diff = 0
         for (i = 1; i <= minlen; i++)
@@ -107,79 +176,100 @@ approx_distance() {
 
 # ── Init ───────────────────────────────────────────────────────────────────
 SEQ_COUNT=$(grep -c '^>' "$INPUT_FASTA")
-echo "Starting bootstrapped consensus for $INPUT_FASTA" > "$LOG"
-echo "Total sequences: $SEQ_COUNT  |  subsample=$SUBSAMPLE_SIZE  max_iters=$MAX_ITERS  thresh=$STABILITY_THRESH" >> "$LOG"
+[ "$SEQ_COUNT" -lt 3 ] && { echo "Error: need at least 3 sequences, got $SEQ_COUNT" >&2; exit 1; }
+[ "$SUBSAMPLE_SIZE" -gt "$SEQ_COUNT" ] && SUBSAMPLE_SIZE=$SEQ_COUNT
 
-# ── Random subsample function (shuf/awk, no seqkit) ──────────────────────
-# Linearize FASTA → shuf → head → re-format (from toki's sample script)
-random_subsample() {
-    local INFILE=$1 N=$2 OUTFILE=$3
-    awk '/^>/ { if(i>0) printf("\n"); i++; printf("%s\t",$0); next } {printf("%s",$0)} END { printf("\n") }' "$INFILE" \
-        | shuf | head -n "$N" \
-        | awk 'BEGIN{FS="\t"}{printf("%s\n%s\n",$1,$2)}' > "$OUTFILE"
-}
+{
+    echo "=== sine_consensus.sh ==="
+    echo "Input:  $INPUT_FASTA  ($SEQ_COUNT sequences)"
+    echo "Params: subsample=$SUBSAMPLE_SIZE  max_iters=$MAX_ITERS  threshold=$CONS_THRESH%  min_cov=$MIN_COVERAGE%  stability=$STABILITY_THRESH"
+    echo "Algorithm: MSA-viewer (gaps in frequency denominator)"
+    echo "---"
+} > "$LOG"
 
-# Iteration 1: bootstrap from first subsample
-random_subsample "$INPUT_FASTA" "$SUBSAMPLE_SIZE" subsample_1.fasta
-mafft --auto --quiet subsample_1.fasta > aligned_1.fasta
-compute_consensus aligned_1.fasta "$PREV_CONS"
-cp "$PREV_CONS" mini_cons_1.fasta
-# Start raw collection with iter 1 mini-consensus
-cp mini_cons_1.fasta "$MASTER_RAW"
-# Align collection (1 seq — trivial, establishes file)
-cp mini_cons_1.fasta "$MASTER_ALN"
-echo "Iter 1: Initialized" >> "$LOG"
+MASTER_RAW="$WORKDIR/master_raw.fasta"
+MASTER_ALN="$WORKDIR/master.aln.fasta"
+PREV_CONS="$WORKDIR/prev_cons.fasta"
+CURR_CONS="$WORKDIR/curr_cons.fasta"
+
+# ── Iteration 1 ────────────────────────────────────────────────────────────
+progress "Iter 1/$MAX_ITERS: subsampling..."
+random_subsample "$INPUT_FASTA" "$SUBSAMPLE_SIZE" "$WORKDIR/sub_1.fasta"
+
+progress "Iter 1/$MAX_ITERS: aligning..."
+mafft --auto --quiet "$WORKDIR/sub_1.fasta" > "$WORKDIR/aln_1.fasta"
+
+compute_consensus "$WORKDIR/aln_1.fasta" "$WORKDIR/mini_1.fasta"
+
+cp "$WORKDIR/mini_1.fasta" "$MASTER_RAW"
+cp "$WORKDIR/mini_1.fasta" "$MASTER_ALN"
+cp "$WORKDIR/mini_1.fasta" "$PREV_CONS"
+
+echo "Iter  1: init" >> "$LOG"
+rm -f "$WORKDIR/sub_1.fasta" "$WORKDIR/aln_1.fasta"
 
 # ── Main loop ──────────────────────────────────────────────────────────────
 CONVERGED=0
+ITER=1
 for ITER in $(seq 2 "$MAX_ITERS"); do
-    random_subsample "$INPUT_FASTA" "$SUBSAMPLE_SIZE" subsample_${ITER}.fasta
-    mafft --auto --quiet subsample_${ITER}.fasta > aligned_${ITER}.fasta
-    compute_consensus aligned_${ITER}.fasta mini_cons_${ITER}.fasta
+    progress "Iter $ITER/$MAX_ITERS: subsampling..."
+    random_subsample "$INPUT_FASTA" "$SUBSAMPLE_SIZE" "$WORKDIR/sub_${ITER}.fasta"
 
-    # Append mini-consensus to raw collection, then re-align all with mafft --auto
-    # This avoids mafft --add failing on single-sequence files
-    cat mini_cons_${ITER}.fasta >> "$MASTER_RAW"
+    progress "Iter $ITER/$MAX_ITERS: aligning subsample..."
+    mafft --auto --quiet "$WORKDIR/sub_${ITER}.fasta" > "$WORKDIR/aln_${ITER}.fasta"
+
+    compute_consensus "$WORKDIR/aln_${ITER}.fasta" "$WORKDIR/mini_${ITER}.fasta"
+
+    cat "$WORKDIR/mini_${ITER}.fasta" >> "$MASTER_RAW"
+
+    progress "Iter $ITER/$MAX_ITERS: aligning master ($ITER mini-consensuses)..."
     mafft --auto --quiet "$MASTER_RAW" > "$MASTER_ALN"
 
     compute_consensus "$MASTER_ALN" "$CURR_CONS"
-    CHANGE=$(approx_distance "$PREV_CONS" "$CURR_CONS")
-    echo "Iter $ITER: change=$CHANGE" >> "$LOG"
 
-    if [ "$ITER" -ge 5 ] && (( $(echo "$CHANGE < $STABILITY_THRESH" | bc -l) )); then
+    CHANGE=$(approx_distance "$PREV_CONS" "$CURR_CONS")
+    echo "Iter $(printf '%2d' "$ITER"): change=$CHANGE" >> "$LOG"
+    progress "Iter $ITER/$MAX_ITERS: change=$CHANGE"
+
+    if [ "$ITER" -ge "$MIN_ITERS" ] && [ "$(echo "$CHANGE < $STABILITY_THRESH" | bc -l)" -eq 1 ]; then
         echo "Converged at iter $ITER (change=$CHANGE < $STABILITY_THRESH)" >> "$LOG"
         CONVERGED=1
         break
     fi
+
     cp "$CURR_CONS" "$PREV_CONS"
+    rm -f "$WORKDIR/sub_${ITER}.fasta" "$WORKDIR/aln_${ITER}.fasta"
 done
+
+progress ""
+echo "" >&2
 
 [ "$CONVERGED" -eq 0 ] && echo "Warning: did not converge within $MAX_ITERS iterations" >> "$LOG"
 [ ! -f "$CURR_CONS" ] && cp "$PREV_CONS" "$CURR_CONS"
 
 # ── Output ─────────────────────────────────────────────────────────────────
-cp "$CURR_CONS" final_consensus_gapped.fasta
-sed -i "s/>consensus/>consensus_${BASENAME}_gapped/" final_consensus_gapped.fasta
+OUTFILE="${BASENAME}_consensus.fasta"
+printf ">%s\n" "$BASENAME" > "$OUTFILE"
+grep -v '^>' "$CURR_CONS" | tr -d '-' >> "$OUTFILE"
+CONS_LEN=$(grep -v '^>' "$OUTFILE" | tr -d '\n' | wc -c)
+echo "Output: $OUTFILE (${CONS_LEN} bp)" >> "$LOG"
 
-printf ">consensus_%s\n" "$BASENAME" > final_consensus.fasta
-grep -v '^>' "$CURR_CONS" | tr -d '-' >> final_consensus.fasta
+# ── Trace alignment (if -k) ───────────────────────────────────────────────
+if [ "$KEEP" -eq 1 ]; then
+    TRACE="${BASENAME}_trace.aln.fasta"
+    > "$TRACE"
+    for f in $(ls "$WORKDIR"/mini_*.fasta 2>/dev/null | sort -t_ -k2 -n); do
+        ITER_NUM=$(basename "$f" | grep -oP '\d+')
+        awk -v n="$ITER_NUM" '/^>/{print ">iter_"n; next}{print}' "$f" >> "$TRACE"
+    done
+    awk -v name="$BASENAME" '/^>/{print ">FINAL_"name; next}{print}' "$CURR_CONS" >> "$TRACE"
+    echo "Trace: $TRACE" >> "$LOG"
+    trap 'rm -rf "$WORKDIR"' EXIT
+fi
 
-echo "Output: final_consensus.fasta (ungapped), final_consensus_gapped.fasta" >> "$LOG"
-echo "master.aln.fasta and master_raw.fasta kept for inspection." >> "$LOG"
-echo "No trimming applied — trim manually after visual inspection." >> "$LOG"
-
-# ── Convergence trace ──────────────────────────────────────────────────────
-TRACE="convergence_trace.fasta"
-> "$TRACE"
-for f in $(ls mini_cons_*.fasta 2>/dev/null | sort -t_ -k3 -n); do
-    ITER_NUM=$(echo "$f" | grep -oP '\d+')
-    awk -v n="$ITER_NUM" '/^>/{print ">iter_"n; next}{print}' "$f" >> "$TRACE"
-done
-awk '/^>/{print ">FINAL_converged"; next}{print}' "$CURR_CONS" >> "$TRACE"
-echo "Convergence trace: $TRACE (all mini-consensuses + final)" >> "$LOG"
-
-# ── Cleanup (temp files only; keep master, trace and final output) ─────────
-rm -f subsample_*.fasta aligned_*.fasta mini_cons_*.fasta \
-      "$PREV_CONS" "$CURR_CONS" master_tmp.fasta 2>/dev/null
-
-echo "Done. See $LOG for details."
+# ── Summary ───────────────────────────────────────────────────────────────
+if [ "$CONVERGED" -eq 1 ]; then
+    echo "$BASENAME: converged at iter $ITER → ${CONS_LEN} bp" >&2
+else
+    echo "$BASENAME: NOT converged after $MAX_ITERS iters → ${CONS_LEN} bp" >&2
+fi
