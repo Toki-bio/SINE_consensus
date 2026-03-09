@@ -1,16 +1,16 @@
-#!/bin/bash
-# ══════════════════════════════════════════════════════════════════════════
-# sine_pairwise_consensus.sh — Pairwise-alignment SINE consensus builder
-# ══════════════════════════════════════════════════════════════════════════
+﻿#!/bin/bash
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# sine_pairwise_consensus.sh â€” Pairwise-alignment SINE consensus builder
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #
 # Approach:
 #   Step 0: If no reference provided, auto-generate one using the
 #           bootstrapped iterative consensus from sine_consensus.sh logic
-#           (subsample → MAFFT MSA → mini-consensus → accumulate → converge)
+#           (subsample â†’ MAFFT MSA â†’ mini-consensus â†’ accumulate â†’ converge)
 #   Step 1: Each copy is pairwise-aligned (MAFFT --op 5) to that reference.
 #           The alignment anchors the copy in the reference coordinate system.
 #   Step 2: Per-position nucleotide frequencies are tallied across ALL copies.
-#           The reference is used ONLY as a coordinate frame — its own bases
+#           The reference is used ONLY as a coordinate frame â€” its own bases
 #           do NOT enter the frequency table.  Only the copies vote.
 #
 # Usage:  bash sine_pairwise_consensus.sh [options] input.fasta
@@ -31,18 +31,18 @@
 #   -S THRESH  Bootstrap convergence threshold (default: 0.01)
 #
 # Output:
-#   ${BASENAME}_pw_consensus.fasta          — ungapped consensus
+#   ${BASENAME}_pw_consensus.fasta          â€” ungapped consensus
 # With -k:
-#   ${BASENAME}_pw_freqtable.tsv            — per-position frequencies
-#   ${BASENAME}_pw_insertions.tsv           — insertion hotspot map
-#   ${BASENAME}_pw_consensus.log            — run log
-#   ${BASENAME}_pw_reference.fasta          — auto-generated reference (if no -r)
+#   ${BASENAME}_pw_freqtable.tsv            â€” per-position frequencies
+#   ${BASENAME}_pw_insertions.tsv           â€” insertion hotspot map
+#   ${BASENAME}_pw_consensus.log            â€” run log
+#   ${BASENAME}_pw_reference.fasta          â€” auto-generated reference (if no -r)
 #
 # Requires: mafft, seqkit, awk, shuf, bc
 
 set -euo pipefail
 
-# ── Defaults ───────────────────────────────────────────────────────────────
+# â”€â”€ Defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 REF_FILE=""
 MAX_COPIES=10000
 CONS_THRESH=50
@@ -57,13 +57,13 @@ BOOT_MIN_ITERS=5
 BOOT_MAX_GAP=50
 BOOT_MIN_COV=50
 
-# ── Usage ──────────────────────────────────────────────────────────────────
+# â”€â”€ Usage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 usage() {
     grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \{0,1\}//'
     exit 0
 }
 
-# ── Parse arguments ────────────────────────────────────────────────────────
+# â”€â”€ Parse arguments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 while getopts "r:n:t:c:j:N:M:S:kh" opt; do
     case $opt in
         r) REF_FILE=$OPTARG ;;
@@ -88,7 +88,7 @@ BASENAME=$(basename "$INPUT_FASTA" | sed 's/\.\(fasta\|fa\|fas\|bnk\)$//')
 WORKDIR=$(mktemp -d "${BASENAME}_pw_XXXXXX")
 LOG="${BASENAME}_pw_consensus.log"
 
-# ── Cleanup ────────────────────────────────────────────────────────────────
+# â”€â”€ Cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cleanup() {
     rm -rf "$WORKDIR"
     [ "$KEEP" -eq 0 ] && rm -f "$LOG"
@@ -97,12 +97,12 @@ trap cleanup EXIT
 
 progress() { printf '\r\033[K%s' "$*" >&2; }
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 0 — Auto-generate reference via bootstrap consensus
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 0 â€” Auto-generate reference via bootstrap consensus
 #           (sine_consensus.sh logic, embedded)
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# ── Random subsample ──────────────────────────────────────────────────────
+# â”€â”€ Random subsample â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 random_subsample() {
     local INFILE=$1 N=$2 OUTFILE=$3
     seqkit seq -w 0 "$INFILE" \
@@ -114,7 +114,7 @@ random_subsample() {
       > "$OUTFILE"
 }
 
-# ── Bootstrap consensus from alignment (gaps NOT in denominator) ──────────
+# â”€â”€ Bootstrap consensus from alignment (gaps NOT in denominator) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 boot_consensus() {
     local ALN=$1 CONS=$2
     awk -v max_gap_pct="$BOOT_MAX_GAP" -v min_cov="$BOOT_MIN_COV" '
@@ -166,7 +166,7 @@ boot_consensus() {
     ' "$ALN" > "$CONS"
 }
 
-# ── Hamming distance ──────────────────────────────────────────────────────
+# â”€â”€ Hamming distance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 approx_distance() {
     awk '
     NR==FNR { if (/^>/) next; seq1 = seq1 $0; next }
@@ -186,11 +186,11 @@ approx_distance() {
     ' "$1" "$2"
 }
 
-# ── Generate or load reference ────────────────────────────────────────────
+# â”€â”€ Generate or load reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 SEQ_COUNT=$(grep -c '^>' "$INPUT_FASTA")
 
 if [ -n "$REF_FILE" ]; then
-    # User-provided reference — strip gaps
+    # User-provided reference â€” strip gaps
     seqkit seq -w 0 "$REF_FILE" \
       | awk '/^>/ { if (seq != "") { gsub(/[-.]/, "", seq); print hdr "\n" toupper(seq) }
                     hdr = $0; seq = ""; next }
@@ -201,7 +201,7 @@ if [ -n "$REF_FILE" ]; then
     progress "Step 0: using provided reference"
     echo "" >&2
 else
-    # ── Auto-generate via bootstrap consensus ─────────────────────────────
+    # â”€â”€ Auto-generate via bootstrap consensus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     echo "=== Step 0: bootstrap consensus (sine_consensus.sh logic) ===" > "$LOG"
     {
         echo "Input:  $INPUT_FASTA  ($SEQ_COUNT sequences)"
@@ -268,15 +268,15 @@ else
 
     [ ! -f "$CURR_CONS" ] && cp "$PREV_CONS" "$CURR_CONS"
 
-    # ── Fallback: simple consensus when bootstrap does not converge ──────
-    #  Take min(100, total) random copies → MAFFT MSA → call consensus using
-    #  plurality ≥35% with gaps in denominator (MSA-viewer semantics), min_cov=30%.
+    # â”€â”€ Fallback: simple consensus when bootstrap does not converge â”€â”€â”€â”€â”€â”€
+    #  Take min(100, total) random copies â†’ MAFFT MSA â†’ call consensus using
+    #  plurality â‰¥35% with gaps in denominator (MSA-viewer semantics), min_cov=30%.
     FALLBACK_SUBSAMPLE=100
     FALLBACK_THRESH=35
     FALLBACK_MIN_COV=30
 
     if [ "$CONVERGED" -eq 0 ]; then
-        echo "Step0 Warning: did not converge within $BOOT_MAX_ITERS iterations — using fallback consensus" >> "$LOG"
+        echo "Step0 Warning: did not converge within $BOOT_MAX_ITERS iterations â€” using fallback consensus" >> "$LOG"
         echo "Warning: bootstrap did not converge after $BOOT_MAX_ITERS iterations. Using fallback (simple) consensus." >&2
 
         FB_N=$FALLBACK_SUBSAMPLE
@@ -359,8 +359,8 @@ else
         echo "Fallback output: $OUTFILE (${CONS_LEN} bp)" >> "$LOG"
         progress ""
         echo "" >&2
-        echo "── $BASENAME fallback consensus ──" >&2
-        echo "  Copies: $FB_N  │  Plurality: >= ${FALLBACK_THRESH}%  │  Min cov: ${FALLBACK_MIN_COV}%" >&2
+        echo "â”€â”€ $BASENAME fallback consensus â”€â”€" >&2
+        echo "  Copies: $FB_N  â”‚  Plurality: >= ${FALLBACK_THRESH}%  â”‚  Min cov: ${FALLBACK_MIN_COV}%" >&2
         echo "  Consensus: ${CONS_LEN} bp" >&2
         echo "  Output:    $OUTFILE" >&2
         exit 0
@@ -384,9 +384,9 @@ else
     rm -f "$WORKDIR"/boot_*.fasta "$WORKDIR"/boot_*.tmp
 fi
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 1 — Prepare copies and reference
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 1 â€” Prepare copies and reference
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 progress "Step 1: preparing sequences..."
 
 REF_HEADER=$(head -1 "$WORKDIR/reference.fasta")
@@ -427,9 +427,9 @@ awk -F'\t' -v dir="$WORKDIR" '{
     echo "---"
 } >> "$LOG"
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 2 — Pairwise MAFFT alignment + projection onto reference coords
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 2 â€” Pairwise MAFFT alignment + projection onto reference coords
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 DONE=0
 while [ "$DONE" -lt "$SEQ_COUNT" ]; do
     BATCH_END=$((DONE + JOBS))
@@ -460,7 +460,7 @@ while [ "$DONE" -lt "$SEQ_COUNT" ]; do
                     r = substr(ref, i, 1)
                     c = (i <= length(copy)) ? toupper(substr(copy, i, 1)) : "-"
                     if (r != "-" && r != ".") {
-                        # Reference position — record what the copy has here
+                        # Reference position â€” record what the copy has here
                         if (rpos > 0 && ilen > 0)
                             ins = ins rpos ":" ilen " "
                         rpos++
@@ -489,7 +489,7 @@ done
 
 progress ""
 
-# ── Combine projections ───────────────────────────────────────────────────
+# â”€â”€ Combine projections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PROJECTIONS="$WORKDIR/projections.txt"
 FAILED=0
 GOOD=0
@@ -516,9 +516,9 @@ fi
 progress "Step 2 done: $GOOD copies projected onto $REF_LEN reference positions"
 echo "" >&2
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 3 — Count frequencies and call consensus
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 3 â€” Count frequencies and call consensus
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 progress "Step 3: counting frequencies and calling consensus..."
 
 FREQ_TABLE="$WORKDIR/freqtable.tsv"
@@ -609,9 +609,9 @@ END {
 read TOTAL_POS CALLED CHANGED NCOPY < "$WORKDIR/stats.txt"
 TRIMMED=$((TOTAL_POS - CALLED))
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 4 — Insertion hotspot analysis
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 4 â€” Insertion hotspot analysis
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 progress "Step 4: analysing insertion hotspots..."
 
 INS_SUMMARY="$WORKDIR/insertion_summary.tsv"
@@ -638,9 +638,9 @@ END {
 # Count notable insertion sites (>10% of copies)
 NOTABLE_INS=$(awk -F'\t' -v n="$NCOPY" 'NR > 1 && $2 / n >= 0.10' "$INS_SUMMARY" | wc -l)
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Step 5 — Output
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+#  Step 5 â€” Output
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 OUTFILE="${BASENAME}_pw_consensus.fasta"
 CONS_SEQ=$(cat "$UNGAPPED")
 CONS_LEN=${#CONS_SEQ}
@@ -657,7 +657,7 @@ printf ">%s_pw\n%s\n" "$BASENAME" "$CONS_SEQ" > "$OUTFILE"
     echo "Output:     $OUTFILE"
 } >> "$LOG"
 
-# ── Keep intermediate files if requested ──────────────────────────────────
+# â”€â”€ Keep intermediate files if requested â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if [ "$KEEP" -eq 1 ]; then
     cp -f "$FREQ_TABLE"  "${BASENAME}_pw_freqtable.tsv"
     cp -f "$INS_SUMMARY" "${BASENAME}_pw_insertions.tsv"
@@ -671,15 +671,15 @@ if [ "$KEEP" -eq 1 ]; then
     trap 'rm -rf "$WORKDIR"' EXIT
 fi
 
-# ── Summary ───────────────────────────────────────────────────────────────
+# â”€â”€ Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 progress ""
 echo "" >&2
-echo "── $BASENAME pairwise consensus ──" >&2
-echo "  Reference: $REF_LEN bp  │  Copies: $NCOPY" >&2
-echo "  Consensus: $CONS_LEN bp  │  Changed: $CHANGED positions" >&2
-echo "  Called:    $CALLED/$TOTAL_POS positions  │  Trimmed: $TRIMMED" >&2
+echo "â”€â”€ $BASENAME pairwise consensus â”€â”€" >&2
+echo "  Reference: $REF_LEN bp  â”‚  Copies: $NCOPY" >&2
+echo "  Consensus: $CONS_LEN bp  â”‚  Changed: $CHANGED positions" >&2
+echo "  Called:    $CALLED/$TOTAL_POS positions  â”‚  Trimmed: $TRIMMED" >&2
 if [ "$NOTABLE_INS" -gt 0 ]; then
-    echo "  ⚠ $NOTABLE_INS insertion hotspot(s) detected (>=10% of copies)" >&2
+    echo "  âš  $NOTABLE_INS insertion hotspot(s) detected (>=10% of copies)" >&2
     echo "    Check ${BASENAME}_pw_insertions.tsv (-k) or re-run with longer reference" >&2
 fi
 echo "  Output:    $OUTFILE" >&2
