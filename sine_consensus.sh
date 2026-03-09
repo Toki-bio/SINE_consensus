@@ -24,7 +24,6 @@
 #
 # Output (always):
 #   ${BASENAME}_consensus.fasta         ΓÇö ungapped, ready for pairwise use
-#   ${BASENAME}_consensus_gapped.fasta  ΓÇö gap columns retained
 # With -k:
 #   ${BASENAME}_trace.aln.fasta         ΓÇö mini-consensus per iteration + final
 #   ${BASENAME}_consensus.log           ΓÇö convergence log
@@ -65,7 +64,7 @@ shift $((OPTIND - 1))
 INPUT_FASTA=${1:?Error: input FASTA required}
 [ -f "$INPUT_FASTA" ] || { echo "Error: $INPUT_FASTA not found" >&2; exit 1; }
 
-BASENAME=$(basename "$INPUT_FASTA" .fasta)
+BASENAME=$(basename "$INPUT_FASTA" | sed 's/\.\(fasta\|fa\|fas\|bnk\)$//')
 WORKDIR=$(mktemp -d "${BASENAME}_cons_XXXXXX")
 LOG="${BASENAME}_consensus.log"
 
@@ -109,7 +108,7 @@ compute_consensus() {
             if (length(line) > maxcol) maxcol = length(line)
             for (i = 1; i <= length(line); i++) {
                 c = substr(line, i, 1)
-                count[i][c]++
+                count[i, c]++
                 total[i]++
             }
         }
@@ -123,7 +122,7 @@ compute_consensus() {
             if (length(line) > maxcol) maxcol = length(line)
             for (i = 1; i <= length(line); i++) {
                 c = substr(line, i, 1)
-                count[i][c]++
+                count[i, c]++
                 total[i]++
             }
         }
@@ -132,8 +131,7 @@ compute_consensus() {
         printf ">consensus\n"
         for (i = 1; i <= maxcol; i++) {
             if (!total[i]) continue
-            gap    = (count[i]["-"] ? count[i]["-"] : 0) \
-                   + (count[i]["."] ? count[i]["."] : 0)
+            gap    = (count[i, "-"] + 0) + (count[i, "."] + 0)
             nongap = total[i] - gap
 
             # Coverage check: require enough sequences to be non-gap here
@@ -144,10 +142,11 @@ compute_consensus() {
 
             # Plurality among non-gap bases (gaps NOT in denominator)
             best = ""; mx = 0; tie = 0
-            for (b in count[i]) {
-                if (b == "-" || b == ".") continue
-                if (count[i][b] > mx)       { mx = count[i][b]; best = b; tie = 0 }
-                else if (count[i][b] == mx) { tie = 1 }
+            split("A C G T", bases, " ")
+            for (b = 1; b <= 4; b++) {
+                ct = count[i, bases[b]] + 0
+                if (ct > mx)       { mx = ct; best = bases[b]; tie = 0 }
+                else if (ct == mx && ct > 0) { tie = 1 }
             }
             printf (tie ? "-" : best)
         }
@@ -348,7 +347,7 @@ if [ "$KEEP" -eq 1 ]; then
     TRACE="${BASENAME}_trace.aln.fasta"
     > "$TRACE"
     for f in $(ls "$WORKDIR"/mini_*.fasta 2>/dev/null | sort -t_ -k2 -n); do
-        ITER_NUM=$(basename "$f" | grep -oP '\d+')
+        ITER_NUM=$(basename "$f" | grep -o '[0-9]*')
         awk -v n="$ITER_NUM" '/^>/{print ">iter_"n; next}{print}' "$f" >> "$TRACE"
     done
     awk -v name="$BASENAME" '/^>/{print ">FINAL_"name; next}{print}' "$CURR_CONS" >> "$TRACE"

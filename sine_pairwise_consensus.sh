@@ -406,7 +406,7 @@ seqkit seq -w 0 "$INPUT_FASTA" \
 COPY_COUNT=$(wc -l < "$WORKDIR/copies_linear.tsv")
 
 # Shuffle and take up to MAX_COPIES
-shuf "$WORKDIR/copies_linear.tsv" | head -n "$MAX_COPIES" > "$WORKDIR/copies_sampled.tsv"
+shuf -n "$MAX_COPIES" "$WORKDIR/copies_linear.tsv" > "$WORKDIR/copies_sampled.tsv"
 SEQ_COUNT=$(wc -l < "$WORKDIR/copies_sampled.tsv")
 
 [ "$SEQ_COUNT" -lt 1 ] && { echo "Error: no copy sequences found" >&2; exit 1; }
