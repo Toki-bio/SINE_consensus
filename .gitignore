@@ -1,0 +1,23 @@
+# Test data (large binary/FASTA files)
+*.bnk
+test.fas
+fasta.txt
+fasta_consensus.fasta
+
+# Helper/test scripts (local use only)
+helper.sh
+run_cons.sh
+run_consensus.sh
+run_thresholds.sh
+test_thresholds.sh
+SSH_RULES.txt
+
+# Intermediate outputs
+*_consensus.log
+*_trace.aln.fasta
+*_freqtable.tsv
+*_insertions.tsv
+*_pw_reference.fasta
+*_pw_consensus_gapped.fasta
+*_cons_*/
+*_pw_*/
