@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SINE Freq Table Viewer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f9fc; --surface: #fff; --border: #e2e6ed; --border2: #cdd2db;
+  --text: #1a202c; --muted: #6b7a99;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'JetBrains Mono', monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+#dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; gap: 16px; padding: 40px;
+}
+#dropzone.drag-over { background: #eef2ff; }
+.drop-box {
+  border: 2px dashed var(--border2); border-radius: 12px;
+  padding: 48px 64px; text-align: center; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--surface);
+}
+.drop-box:hover, .drag-over .drop-box { border-color: #2563eb; background: #f0f5ff; }
+.drop-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.drop-title { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
+.drop-sub { font-size: 0.68rem; color: var(--muted); line-height: 1.6; }
+.drop-sub code { background: #f0f2f6; padding: 1px 5px; border-radius: 3px; font-size: 0.65rem; }
+#fileInput { display: none; }
+.btn {
+  display: inline-block; margin-top: 14px; padding: 8px 20px;
+  background: #2563eb; color: #fff; border-radius: 6px;
+  font-size: 0.72rem; font-family: 'JetBrains Mono', monospace;
+  cursor: pointer; border: none; font-weight: 700; letter-spacing: 0.03em;
+}
+.btn:hover { background: #1d4ed8; }
+.example-link { font-size: 0.68rem; color: #2563eb; cursor: pointer; text-decoration: underline; }
+
+#app { display: none; }
+
+header {
+  padding: 12px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 16px;
+}
+.title { font-family: 'Syne', sans-serif; font-size: 1.05rem; font-weight: 800; color: #0f172a; }
+.subtitle { font-size: 0.6rem; color: var(--muted); margin-top: 1px; }
+.legend { margin-left: auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.leg { display: flex; align-items: center; gap: 4px; font-size: 0.65rem; font-weight: 600; }
+.leg-dot { width: 8px; height: 8px; border-radius: 2px; }
+.reload-btn {
+  margin-left: 10px; padding: 4px 10px; font-size: 0.62rem; background: #f1f5f9;
+  border: 1px solid var(--border2); border-radius: 4px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; color: var(--muted);
+}
+.reload-btn:hover { color: var(--text); background: #e8ecf2; }
+
+.controls {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  padding: 8px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
+}
+.cg { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.cg label { text-transform: uppercase; font-size: 0.56rem; letter-spacing: 0.07em; white-space: nowrap; }
+.cv { color: var(--text); font-weight: 700; min-width: 26px; }
+input[type=range] {
+  -webkit-appearance: none; width: 72px; height: 2px;
+  background: var(--border2); border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 10px; height: 10px;
+  border-radius: 50%; background: #2563eb; cursor: pointer;
+}
+select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 2px 5px; font-size: 0.65rem;
+  font-family: 'JetBrains Mono', monospace; cursor: pointer;
+}
+.csep { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }
+
+#wrap { padding: 14px 28px 20px; overflow-x: auto; overflow-y: hidden; }
+#wrap canvas { display: block; cursor: crosshair; }
+
+#tip {
+  position: fixed; background: #fff; border: 1px solid var(--border2);
+  border-radius: 8px; padding: 9px 12px; font-size: 0.66rem;
+  pointer-events: none; display: none; z-index: 999;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12); min-width: 170px;
+}
+.th { font-family:'Syne',sans-serif; font-weight:700; font-size:0.76rem; margin-bottom:5px; color:#0f172a; }
+.trow { display:flex; justify-content:space-between; gap:12px; margin-bottom:2px; font-size:0.64rem; }
+.trow .l { color: var(--muted); }
+.mbr { display:flex; align-items:center; gap:5px; margin-bottom:3px; }
+.mbr .b { height:5px; border-radius:1px; flex-shrink:0; }
+.mbr .lbl { font-weight:700; min-width:10px; font-size:0.66rem; }
+.mbr .v { font-size:0.62rem; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="dropzone">
+  <div class="drop-box" id="dropBox">
+    <div class="drop-icon">📊</div>
+    <div class="drop-title">SINE Freq Table Viewer</div>
+    <div class="drop-sub">
+      Drop a <code>*_pw_freqtable.tsv</code> file here<br>
+      (generated by <code>sine_pairwise_consensus.sh -k</code>)<br><br>
+      Format: <code>pos ref A C G T gap nongap</code> (tab-separated, no header)
+    </div>
+    <button class="btn" onclick="document.getElementById('fileInput').click()">Browse file</button>
+    <input type="file" id="fileInput" accept=".tsv,.txt">
+  </div>
+  <span class="example-link" id="loadExample">Load built-in example (sq2 · Tretioscincus oriximinensis · 177 bp · 481 copies)</span>
+</div>
+
+<div id="app">
+  <header>
+    <div>
+      <div class="title">SINE Freq Table Viewer</div>
+      <div class="subtitle" id="fileLabel">—</div>
+    </div>
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:#e8251a"></div>A</div>
+      <div class="leg"><div class="leg-dot" style="background:#1a6fe8"></div>C</div>
+      <div class="leg"><div class="leg-dot" style="background:#e8b800"></div>G</div>
+      <div class="leg"><div class="leg-dot" style="background:#22c45a"></div>T</div>
+      <div class="leg"><div class="leg-dot" style="background:#b0bbc8"></div>gap</div>
+      <div class="leg"><div class="leg-dot" style="background:#5a6a82;border:1px solid #3a4a62"></div>coverage</div>
+    </div>
+    <button class="reload-btn" onclick="showDrop()">↩ load new file</button>
+  </header>
+
+  <div class="controls">
+    <div class="cg"><label>Threshold</label>
+      <input type="range" id="thresh" min="5" max="80" value="35">
+      <span class="cv" id="tv">35%</span></div>
+    <div class="csep"></div>
+    <div class="cg"><label>Min cov</label>
+      <input type="range" id="mincov" min="0" max="60" value="10">
+      <span class="cv" id="mv">10%</span></div>
+    <div class="csep"></div>
+    <div class="cg"><label>Bar width</label>
+      <input type="range" id="bw" min="3" max="30" value="9">
+      <span class="cv" id="bwv">9</span></div>
+    <div class="csep"></div>
+    <div class="cg"><label>Coverage</label>
+      <select id="covstyle">
+        <option value="line">Line</option>
+        <option value="bar">5th bar</option>
+        <option value="none">Hide</option>
+      </select></div>
+    <div class="csep"></div>
+    <div class="cg"><label>Gap calling</label>
+      <select id="gapcall">
+        <option value="yes">Show as –</option>
+        <option value="no">Off</option>
+      </select></div>
+    <div class="csep"></div>
+    <div class="cg"><label>Multi-thresh</label>
+      <select id="multimode">
+        <option value="off">Off</option>
+        <option value="on">20/30/40/50/60%</option>
+      </select></div>
+  </div>
+
+  <div id="wrap"><canvas id="cv"></canvas></div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+const BC      = { A:'#e8251a', C:'#1a6fe8', G:'#e8b800', T:'#22c45a' };
+const GAP_COL = '#b0bbc8';
+const BK      = ['A','C','G','T'];
+const MULTI_T = [20, 30, 40, 50, 60];
+
+let RAW = [], TOTAL = 0, FNAME = '';
+let thresh=35, mincov=10, barW=9, covStyle='line', gapCall='yes', multiMode='off', hoverPos=null;
+
+const XOFF=36, GAP=0, HIST_H=168, SEQ_H=18, MSEQ_H=14, RULER_H=18, YPAD_TOP=8;
+
+function parseTSV(text) {
+  const rows = [];
+  let total = 0;
+  text.trim().split('\n').forEach(line => {
+    line = line.trim();
+    if (!line || line.startsWith('#')) return;
+    const f = line.split('\t');
+    if (f.length < 8) return;
+    const [pos, ref, A, C, G, T, gap, nongap] = f;
+    const row = [+pos, ref, +A, +C, +G, +T, +gap, +nongap];
+    rows.push(row);
+    const s = +A + +C + +G + +T + +gap;
+    if (s > total) total = s;
+  });
+  return { rows, total };
+}
+
+function callBase(counts, nongapFrac, t, mc, gapF, doGap) {
+  if (nongapFrac * 100 < mc) return '-';
+  let best = '-', bestF = 0;
+  BK.forEach(b => { const f = counts[b]/TOTAL; if (f > bestF) { bestF=f; best=b; } });
+  if (doGap && gapF > bestF) return bestF*100 >= t ? best : (gapF*100 >= t ? '–' : '-');
+  return bestF*100 >= t ? best : '-';
+}
+
+function getData() {
+  return RAW.map(r => {
+    const [pos,ref,cA,cC,cG,cT,gap,nongap] = r;
+    const counts = {A:cA, C:cC, G:cG, T:cT};
+    const freqs  = {}; BK.forEach(b => freqs[b]=counts[b]/TOTAL);
+    const gapFrac=gap/TOTAL, nongapFrac=nongap/TOTAL;
+    const called = callBase(counts, nongapFrac, thresh, mincov, gapFrac, gapCall==='yes');
+    return {pos,ref,counts,freqs,gapFrac,nongapFrac,nongap,called};
+  });
+}
+
+function drawSeqRow(ctx, data, yTop, rowH, t, mc, doGap) {
+  const STEP = barW+GAP, fs=Math.min(10,Math.max(6,Math.min(rowH-3,barW-1)));
+  ctx.fillStyle='#f0f2f6';
+  ctx.fillRect(XOFF, yTop, data.length*STEP, rowH);
+  ctx.fillStyle='#8896aa'; ctx.font=`${Math.max(6,rowH-5)}px JetBrains Mono`;
+  ctx.textAlign='right';
+  ctx.fillText(t+'%', XOFF-3, yTop+rowH*0.72);
+  ctx.font=`bold ${fs}px JetBrains Mono`; ctx.textAlign='center';
+  data.forEach((d,i) => {
+    const cx = XOFF+i*STEP+barW/2;
+    const c  = callBase(d.counts, d.nongapFrac, t, mc, d.gapFrac, doGap);
+    if      (c==='–') { ctx.fillStyle='#6a7888'; ctx.fillText('–',cx,yTop+rowH*0.72); }
+    else if (c!=='-') { ctx.fillStyle='#111';    ctx.fillText(c, cx,yTop+rowH*0.72); }
+    else { ctx.fillStyle='#ccc'; ctx.fillRect(cx-0.5,yTop+rowH/2-0.5,1,1); }
+  });
+  ctx.strokeStyle='#dde2ea'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(XOFF,yTop+rowH); ctx.lineTo(XOFF+data.length*STEP,yTop+rowH); ctx.stroke();
+}
+
+const canvas = document.getElementById('cv');
+const ctx    = canvas.getContext('2d');
+const DPR    = () => window.devicePixelRatio||1;
+
+function render() {
+  if (!RAW.length) return;
+  const dpr=DPR(), data=getData(), N=data.length, STEP=barW+GAP;
+  const W=XOFF+N*STEP+4;
+  const multiRows = multiMode==='on' ? MULTI_T.length : 0;
+  const TOTAL_H   = YPAD_TOP+HIST_H+SEQ_H+multiRows*MSEQ_H+RULER_H;
+
+  canvas.style.width=W+'px'; canvas.style.height=TOTAL_H+'px';
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(TOTAL_H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,TOTAL_H);
+
+  const barBase=YPAD_TOP+HIST_H;
+
+  ctx.textAlign='right'; ctx.font='8px JetBrains Mono';
+  [0.25,0.5,0.75,1.0].forEach(f => {
+    const y=barBase-f*HIST_H;
+    ctx.strokeStyle='#eaecf1'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(XOFF,y); ctx.lineTo(W,y); ctx.stroke();
+    ctx.fillStyle='#aab0bf'; ctx.fillText((f*100).toFixed(0)+'%',XOFF-3,y+3);
+  });
+
+  data.forEach((d,i) => {
+    const x=XOFF+i*STEP;
+    const entries=BK.map(b=>({b,cnt:d.counts[b],col:BC[b]}));
+    if (gapCall==='yes') entries.push({b:'–',cnt:Math.round(d.gapFrac*TOTAL),col:GAP_COL});
+    entries.sort((a,b)=>b.cnt-a.cnt);
+    entries.forEach(({cnt,col})=>{
+      if (cnt<=0) return;
+      ctx.fillStyle=col;
+      ctx.fillRect(x, barBase-(cnt/TOTAL)*HIST_H, barW, (cnt/TOTAL)*HIST_H);
+    });
+    if (covStyle==='bar') {
+      const cw=Math.max(1,Math.round(barW*0.22)), nh=d.nongapFrac*HIST_H;
+      ctx.fillStyle='#6b7a99';
+      ctx.fillRect(x+barW-cw, barBase-nh, cw, nh);
+    }
+    if (hoverPos===d.pos) {
+      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1;
+      ctx.strokeRect(x+0.5,YPAD_TOP+0.5,barW-1,HIST_H-1);
+    }
+  });
+
+  if (covStyle==='line') {
+    ctx.beginPath(); ctx.strokeStyle='#5a6a82'; ctx.lineWidth=1.5;
+    data.forEach((d,i)=>{
+      const x=XOFF+i*STEP+barW/2, y=barBase-d.nongapFrac*HIST_H;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+
+  const tY=barBase-(thresh/100)*HIST_H;
+  ctx.strokeStyle='#cc2222'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(XOFF-7,tY); ctx.lineTo(XOFF,tY); ctx.stroke();
+  ctx.fillStyle='#cc2222'; ctx.textAlign='right'; ctx.font='bold 8px JetBrains Mono';
+  ctx.fillText('t='+thresh+'%',XOFF-9,tY+3);
+  if (mincov>0) {
+    const mcY=barBase-(mincov/100)*HIST_H;
+    ctx.strokeStyle='#9a6e00'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(XOFF-7,mcY); ctx.lineTo(XOFF,mcY); ctx.stroke();
+    ctx.fillStyle='#9a6e00'; ctx.fillText('c='+mincov+'%',XOFF-9,mcY+3);
+  }
+
+  const seqY=barBase;
+  ctx.strokeStyle='#dde2ea'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(XOFF,seqY); ctx.lineTo(W,seqY); ctx.stroke();
+  const fs=Math.min(11,Math.max(6,barW-1));
+  ctx.fillStyle='#8896aa'; ctx.font=`bold ${Math.max(7,fs-1)}px JetBrains Mono`;
+  ctx.textAlign='right'; ctx.fillText(thresh+'%',XOFF-3,seqY+SEQ_H*0.72);
+  ctx.font=`bold ${fs}px JetBrains Mono`; ctx.textAlign='center';
+  data.forEach((d,i)=>{
+    const cx=XOFF+i*STEP+barW/2;
+    if      (d.called==='–') { ctx.fillStyle='#6a7888'; ctx.fillText('–',cx,seqY+SEQ_H*0.72); }
+    else if (d.called!=='-') { ctx.fillStyle='#111'; ctx.fillText(d.called,cx,seqY+SEQ_H*0.72); }
+    else { ctx.fillStyle='#ccc'; ctx.fillRect(cx-0.5,seqY+SEQ_H/2-0.5,1,1); }
+  });
+  ctx.strokeStyle='#dde2ea'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(XOFF,seqY+SEQ_H); ctx.lineTo(W,seqY+SEQ_H); ctx.stroke();
+
+  if (multiMode==='on') {
+    MULTI_T.forEach((t,ri)=>drawSeqRow(ctx,data,seqY+SEQ_H+ri*MSEQ_H,MSEQ_H,t,mincov,gapCall==='yes'));
+  }
+
+  const rulerY=seqY+SEQ_H+(multiMode==='on'?MULTI_T.length*MSEQ_H:0);
+  ctx.font='8px JetBrains Mono'; ctx.textAlign='center';
+  data.forEach((d,i)=>{
+    if (d.pos%10===0) {
+      const x=XOFF+i*STEP+barW/2;
+      ctx.fillStyle='#c8d0dc'; ctx.fillRect(x,rulerY,1,3);
+      ctx.fillStyle='#9ba8bb'; ctx.fillText(d.pos,x,rulerY+RULER_H-3);
+    }
+  });
+}
+
+function canvasPos(e) {
+  const r=canvas.getBoundingClientRect(), cssX=e.clientX-r.left;
+  const i=Math.floor((cssX-XOFF)/(barW+GAP));
+  return (i>=0&&i<RAW.length)?RAW[i][0]:null;
+}
+function showTip(e,pos) {
+  const tip=document.getElementById('tip');
+  if (!pos){tip.style.display='none';return;}
+  const d=getData()[pos-1];
+  const bars=BK.map(b=>{
+    const f=d.freqs[b],cnt=d.counts[b],w=Math.round(f*76);
+    return `<div class="mbr"><div class="b" style="width:${w}px;background:${BC[b]}"></div><span class="lbl" style="color:${BC[b]}">${b}</span><span class="v">${cnt} (${(f*100).toFixed(1)}%)</span></div>`;
+  }).join('');
+  const gw=Math.round(d.gapFrac*76);
+  tip.innerHTML=`<div class="th">pos ${pos} · ref <span style="color:#888">${d.ref}</span> · called <span style="color:${d.called!=='-'&&d.called!=='–'?BC[d.called]:'#888'}">${d.called==='-'?'none':d.called}</span></div>${bars}<div class="mbr"><div class="b" style="width:${gw}px;background:${GAP_COL}"></div><span class="lbl" style="color:#7a8899">–</span><span class="v">${RAW[pos-1][6]} (${(d.gapFrac*100).toFixed(1)}%)</span></div><div class="trow" style="margin-top:5px;padding-top:5px;border-top:1px solid #eee"><span class="l">Σ ACGT</span><span>${(BK.reduce((s,b)=>s+d.freqs[b],0)*100).toFixed(1)}%</span></div><div class="trow"><span class="l">coverage</span><span>${d.nongap}/${TOTAL} (${(d.nongapFrac*100).toFixed(1)}%)</span></div>`;
+  tip.style.display='block';
+  tip.style.left=(e.clientX+14)+'px';
+  tip.style.top=(e.clientY-14)+'px';
+}
+canvas.addEventListener('mousemove',e=>{hoverPos=canvasPos(e);render();showTip(e,hoverPos);});
+canvas.addEventListener('mouseleave',()=>{hoverPos=null;document.getElementById('tip').style.display='none';render();});
+
+document.getElementById('thresh').addEventListener('input',e=>{thresh=+e.target.value;document.getElementById('tv').textContent=thresh+'%';render();});
+document.getElementById('mincov').addEventListener('input',e=>{mincov=+e.target.value;document.getElementById('mv').textContent=mincov+'%';render();});
+document.getElementById('bw').addEventListener('input',e=>{barW=+e.target.value;document.getElementById('bwv').textContent=barW;render();});
+document.getElementById('covstyle').addEventListener('change',e=>{covStyle=e.target.value;render();});
+document.getElementById('gapcall').addEventListener('change',e=>{gapCall=e.target.value;render();});
+document.getElementById('multimode').addEventListener('change',e=>{multiMode=e.target.value;render();});
+window.addEventListener('resize',render);
+
+function loadData(text, label) {
+  const {rows, total} = parseTSV(text);
+  if (!rows.length) { alert('No valid rows found. Check TSV format.'); return; }
+  RAW=rows; TOTAL=total; FNAME=label;
+  document.getElementById('fileLabel').textContent=label+' · '+rows.length+' positions · '+total+' total copies';
+  document.getElementById('dropzone').style.display='none';
+  document.getElementById('app').style.display='block';
+  render();
+}
+
+function showDrop() {
+  document.getElementById('app').style.display='none';
+  document.getElementById('dropzone').style.display='flex';
+}
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>loadData(ev.target.result, f.name);
+  r.readAsText(f);
+});
+
+const dz=document.getElementById('dropzone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f=e.dataTransfer.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>loadData(ev.target.result,f.name);
+  r.readAsText(f);
+});
+document.getElementById('dropBox').addEventListener('click',()=>document.getElementById('fileInput').click());
+
+document.getElementById('loadExample').addEventListener('click', ()=>loadData(EXAMPLE_TSV, 'sq2_example · Tretioscincus oriximinensis'));
+
+const EXAMPLE_TSV = `1\tT\t55\t18\t11\t188\t209\t272
+2\tA\t206\t14\t33\t39\t189\t292
+3\tG\t58\t23\t191\t24\t185\t296
+4\tC\t20\t169\t39\t77\t176\t305
+5\tT\t18\t47\t7\t246\t163\t318
+6\tC\t27\t214\t18\t68\t154\t327
+7\tA\t252\t26\t29\t29\t145\t336
+8\tG\t75\t13\t225\t27\t140\t340
+9\tT\t35\t33\t45\t239\t129\t352
+10\tG\t84\t17\t221\t36\t123\t358
+11\tG\t92\t33\t218\t26\t112\t369
+12\tT\t49\t107\t38\t191\t96\t385
+13\tA\t297\t13\t57\t29\t85\t396
+14\tG\t112\t28\t243\t21\t77\t404
+15\tA\t311\t16\t54\t27\t73\t408
+16\tG\t121\t35\t229\t26\t70\t411
+17\tC\t50\t251\t27\t84\t69\t412
+18\tA\t325\t24\t35\t32\t65\t416
+19\tT\t85\t138\t33\t167\t55\t423
+20\tA\t195\t121\t50\t61\t54\t427
+21\tT\t46\t41\t19\t327\t48\t433
+22\tG\t82\t32\t273\t48\t45\t435
+23\tC\t41\t238\t35\t126\t41\t440
+24\tT\t29\t66\t10\t351\t25\t456
+25\tT\t23\t56\t19\t361\t22\t459
+26\tT\t31\t32\t52\t347\t19\t462
+27\tG\t75\t31\t316\t39\t20\t461
+28\tC\t86\t255\t24\t98\t17\t463
+29\tA\t362\t30\t39\t32\t18\t463
+30\tT\t80\t44\t22\t318\t17\t464
+31\tG\t126\t27\t265\t44\t19\t462
+32\tC\t45\t287\t40\t90\t18\t462
+33\tA\t361\t26\t33\t39\t22\t459
+34\tG\t168\t17\t247\t29\t20\t461
+35\tA\t380\t11\t56\t17\t17\t464
+36\tA\t344\t13\t71\t32\t21\t460
+37\tG\t127\t21\t259\t49\t24\t456
+38\tG\t132\t21\t249\t53\t26\t455
+39\tT\t38\t71\t28\t317\t27\t454
+40\tC\t29\t237\t33\t153\t29\t452
+41\tC\t70\t227\t40\t118\t25\t455
+42\tC\t56\t266\t24\t110\t24\t456
+43\tA\t284\t39\t54\t78\t26\t455
+44\tG\t129\t27\t262\t42\t21\t460
+45\tG\t117\t41\t247\t57\t19\t462
+46\tT\t30\t50\t17\t365\t19\t462
+47\tT\t30\t45\t18\t371\t17\t464
+48\tC\t46\t276\t27\t110\t22\t459
+49\tA\t344\t33\t47\t37\t20\t461
+50\tA\t270\t30\t112\t50\t18\t462
+51\tT\t40\t57\t26\t338\t20\t461
+52\tC\t38\t226\t28\t163\t23\t455
+53\tC\t36\t269\t19\t139\t17\t463
+54\tC\t43\t274\t16\t128\t20\t461
+55\tT\t51\t117\t14\t279\t19\t461
+56\tG\t176\t16\t219\t48\t22\t459
+57\tG\t104\t46\t265\t39\t27\t454
+58\tC\t51\t261\t31\t107\t30\t450
+59\tA\t301\t48\t39\t67\t26\t455
+60\tT\t38\t69\t26\t318\t30\t451
+61\tC\t27\t249\t19\t159\t27\t454
+62\tT\t24\t63\t15\t351\t28\t453
+63\tC\t32\t270\t28\t112\t37\t442
+64\tC\t56\t247\t22\t117\t39\t442
+65\tA\t283\t42\t71\t46\t39\t442
+66\tG\t138\t20\t221\t63\t39\t442
+67\tG\t119\t34\t210\t78\t40\t441
+68\tT\t100\t54\t61\t225\t41\t440
+69\tA\t312\t18\t85\t28\t36\t443
+70\tG\t156\t20\t219\t43\t43\t438
+71\tG\t130\t30\t238\t38\t45\t436
+72\tC\t73\t165\t81\t120\t42\t439
+73\tT\t86\t98\t33\t229\t35\t446
+74\tG\t106\t25\t207\t114\t29\t452
+75\tG\t125\t22\t256\t52\t26\t455
+76\tG\t153\t34\t229\t39\t26\t455
+77\tA\t310\t20\t96\t31\t24\t457
+78\tA\t307\t30\t85\t40\t19\t462
+79\tA\t315\t22\t75\t44\t25\t456
+80\tG\t186\t35\t190\t38\t32\t449
+81\tA\t288\t24\t91\t44\t34\t447
+82\tT\t87\t139\t35\t176\t44\t437
+83\tT\t57\t133\t41\t215\t35\t446
+84\tT\t52\t164\t30\t201\t34\t447
+85\tC\t58\t231\t33\t123\t34\t445
+86\tT\t50\t56\t25\t317\t33\t448
+87\tG\t107\t56\t198\t81\t38\t442
+88\tT\t33\t151\t44\t219\t34\t447
+89\tC\t50\t240\t32\t122\t36\t444
+90\tT\t57\t53\t34\t312\t25\t456
+91\tG\t126\t42\t244\t43\t25\t455
+92\tA\t335\t26\t62\t36\t22\t459
+93\tA\t331\t32\t53\t44\t21\t460
+94\tA\t303\t41\t45\t65\t24\t454
+95\tC\t66\t223\t47\t113\t32\t449
+96\tC\t53\t243\t21\t138\t25\t455
+97\tC\t44\t259\t25\t128\t25\t456
+98\tT\t58\t57\t25\t314\t27\t454
+99\tG\t126\t26\t247\t48\t33\t447
+100\tG\t104\t48\t263\t38\t28\t453
+101\tA\t330\t20\t69\t31\t31\t450
+102\tG\t149\t40\t215\t44\t33\t448
+103\tA\t345\t17\t52\t30\t37\t444
+104\tG\t150\t33\t221\t36\t40\t440
+105\tC\t67\t232\t30\t112\t40\t441
+106\tT\t62\t95\t26\t255\t43\t438
+107\tG\t134\t43\t202\t56\t45\t435
+108\tC\t49\t233\t28\t128\t42\t438
+109\tT\t42\t50\t26\t325\t38\t443
+110\tG\t105\t40\t236\t59\t41\t440
+111\tC\t39\t257\t43\t105\t37\t444
+112\tC\t48\t257\t27\t109\t40\t441
+113\tA\t301\t31\t59\t51\t39\t442
+114\tG\t142\t36\t227\t41\t35\t446
+115\tT\t51\t73\t36\t288\t33\t448
+116\tC\t47\t275\t40\t91\t28\t453
+117\tA\t253\t37\t48\t108\t35\t446
+118\tG\t114\t56\t220\t55\t36\t445
+119\tT\t84\t59\t41\t261\t36\t445
+120\tG\t147\t35\t226\t41\t32\t449
+121\tT\t63\t91\t31\t262\t33\t447
+122\tA\t286\t42\t66\t55\t32\t449
+123\tG\t140\t36\t237\t40\t28\t453
+124\tA\t301\t29\t87\t34\t30\t451
+125\tC\t64\t218\t35\t128\t35\t445
+126\tA\t345\t24\t44\t36\t31\t449
+127\tA\t256\t26\t123\t38\t37\t443
+128\tT\t61\t80\t36\t265\t39\t442
+129\tA\t267\t40\t77\t52\t44\t436
+130\tC\t63\t209\t43\t117\t47\t432
+131\tT\t50\t48\t40\t300\t43\t438
+132\tG\t119\t31\t249\t44\t38\t443
+133\tA\t296\t17\t83\t46\t38\t442
+134\tA\t153\t61\t161\t75\t30\t450
+135\tC\t46\t242\t43\t116\t34\t447
+136\tT\t73\t51\t37\t292\t28\t453
+137\tA\t289\t26\t70\t71\t25\t456
+138\tG\t133\t38\t247\t40\t23\t458
+139\tA\t311\t33\t72\t44\t20\t460
+140\tT\t57\t72\t43\t287\t22\t459
+141\tG\t151\t21\t234\t52\t23\t458
+142\tG\t130\t39\t259\t32\t20\t460
+143\tA\t306\t31\t80\t42\t22\t459
+144\tC\t49\t233\t39\t134\t25\t455
+145\tC\t89\t248\t25\t93\t26\t455
+146\tA\t315\t40\t52\t44\t30\t451
+147\tA\t270\t31\t105\t43\t32\t449
+148\tT\t68\t58\t44\t280\t31\t450
+149\tG\t137\t20\t221\t65\t38\t443
+150\tG\t121\t36\t216\t66\t42\t439
+151\tT\t54\t77\t29\t280\t41\t440
+152\tC\t56\t238\t31\t119\t37\t444
+153\tT\t39\t55\t23\t326\t38\t443
+154\tG\t117\t47\t228\t45\t44\t437
+155\tA\t287\t32\t54\t61\t47\t434
+156\tT\t56\t114\t32\t222\t57\t424
+157\tT\t62\t50\t32\t282\t55\t426
+158\tT\t50\t144\t31\t199\t57\t424
+159\tA\t234\t36\t89\t58\t64\t417
+160\tG\t111\t32\t215\t55\t66\t413
+161\tT\t58\t72\t39\t237\t75\t406
+162\tA\t247\t30\t74\t53\t77\t404
+163\tT\t71\t66\t36\t228\t80\t401
+164\tA\t238\t37\t69\t52\t84\t396
+165\tA\t271\t29\t49\t46\t86\t395
+166\tG\t91\t26\t218\t54\t91\t389
+167\tG\t106\t22\t200\t54\t99\t382
+168\tC\t49\t210\t29\t92\t101\t380
+169\tA\t248\t35\t35\t65\t98\t383
+170\tG\t93\t32\t170\t83\t103\t378
+171\tT\t36\t128\t29\t178\t109\t371
+172\tT\t38\t57\t23\t248\t114\t366
+173\tT\t33\t41\t28\t261\t117\t363
+174\tC\t44\t115\t29\t165\t128\t353
+175\tT\t36\t126\t26\t164\t129\t352
+176\tT\t51\t38\t19\t239\t134\t347
+177\tA\t153\t17\t47\t122\t142\t339`;
+</script>
+</body>
+</html>
