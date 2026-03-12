@@ -577,6 +577,26 @@ const EXAMPLE_TSV = `1\tT\t55\t18\t11\t188\t209\t272
 175\tT\t36\t126\t26\t164\t129\t352
 176\tT\t51\t38\t19\t239\t134\t347
 177\tA\t153\t17\t47\t122\t142\t339`;
+
+// ── ?url= auto-load ──────────────────────────────────────────────────────
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  const url = params.get('url');
+  if (!url) return;
+  const label = decodeURIComponent(url).split('/').pop().replace(/\.tsv$/,'');
+  document.getElementById('dropzone').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('fileLabel').textContent = 'Loading…';
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(text => loadData(text, label))
+    .catch(err => {
+      document.getElementById('dropzone').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+      alert('Failed to load: ' + err.message);
+    });
+})();
+
 </script>
 </body>
 </html>
