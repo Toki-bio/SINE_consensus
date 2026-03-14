@@ -48,8 +48,8 @@ set -euo pipefail
 # -- Defaults ---------------------------------------------------------------
 REF_FILE=""
 MAX_COPIES=10000
-CONS_THRESH=50
-MIN_COVERAGE=30
+CONS_THRESH=30
+MIN_COVERAGE=10
 JOBS=4
 KEEP=0
 # Step 0 defaults (bootstrap)
